@@ -13,7 +13,7 @@ A simple face swapper based on insightface inswapper heavily inspired by roop.
 - Swap specific face (face recognition)
 - Video trim tool
 - Face enhancer (GFPGAN)
-- Face parsing mask
+- Face parsing mask (Requires CUDA)
 - colab support
 
 ## Installation
