@@ -15,9 +15,9 @@ swap_options_list = [
 
 
 def swap_face(whole_img, target_face, source_face, models):
-    inswapper = models.get('swap')
-    face_enhancer = models.get('enhance', None)
-    face_parser = models.get('face_parser', None)
+    inswapper = models.get("swap")
+    face_enhancer = models.get("enhance", None)
+    face_parser = models.get("face_parser", None)
     fe_enable = models.get("enhance_sett", False)
 
     bgr_fake, M = inswapper.get(whole_img, target_face, source_face, paste_back=False)
@@ -27,10 +27,14 @@ def swap_face(whole_img, target_face, source_face, models):
     if face_parser is not None:
         fp_enable, mi, me, mb = models.get("face_parser_sett")
         if fp_enable:
-            bgr_fake, parsed_mask = swap_regions(bgr_fake, aimg, face_parser, includes=mi, excludes=me, blur_size=mb)
+            bgr_fake, parsed_mask = swap_regions(
+                bgr_fake, aimg, face_parser, includes=mi, excludes=me, blur_size=mb
+            )
 
     if fe_enable:
-        _, bgr_fake, _ = face_enhancer.enhance(bgr_fake, paste_back=True, has_aligned=True)
+        _, bgr_fake, _ = face_enhancer.enhance(
+            bgr_fake, paste_back=True, has_aligned=True
+        )
         bgr_fake = bgr_fake[0]
         M /= 0.25
 
@@ -60,11 +64,13 @@ def swap_face(whole_img, target_face, source_face, models):
 
     img_mask = np.reshape(img_mask, [img_mask.shape[0], img_mask.shape[1], 1])
     fake_merged = img_mask * bgr_fake + (1 - img_mask) * whole_img.astype(np.float32)
-    fake_merged = add_logo_to_image(fake_merged.astype('uint8'))
+    fake_merged = add_logo_to_image(fake_merged.astype("uint8"))
     return fake_merged
 
 
-def swap_face_with_condition(whole_img, target_faces, source_face, condition, age, models):
+def swap_face_with_condition(
+    whole_img, target_faces, source_face, condition, age, models
+):
     swapped = whole_img.copy()
 
     for target_face in target_faces:
@@ -80,6 +86,7 @@ def swap_face_with_condition(whole_img, target_faces, source_face, condition, ag
             swapped = swap_face(swapped, target_face, source_face, models)
 
     return swapped
+
 
 def swap_specific(source_specifics, target_faces, whole_img, models, threshold=0.6):
     swapped = whole_img.copy()

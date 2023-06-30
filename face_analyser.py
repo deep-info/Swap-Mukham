@@ -7,6 +7,7 @@ detect_conditions = [
     "most height",
 ]
 
+
 def analyse_face(image, model, return_single_face=True, detect_condition="left most"):
     faces = model.get(image)
     if not return_single_face:

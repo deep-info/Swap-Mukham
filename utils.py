@@ -10,6 +10,7 @@ from threading import Thread
 from moviepy.editor import VideoFileClip, ImageSequenceClip
 from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_subclip
 
+
 def trim_video(video_path, output_path, start_frame, stop_frame):
     video_name, _ = os.path.splitext(os.path.basename(video_path))
     trimmed_video_filename = video_name + "_trimmed" + ".mp4"
@@ -31,6 +32,7 @@ def trim_video(video_path, output_path, start_frame, stop_frame):
 
     return trimmed_video_file_path
 
+
 def open_directory(path=None):
     if path is None:
         return
@@ -38,6 +40,7 @@ def open_directory(path=None):
         os.startfile(path)
     except:
         subprocess.Popen(["xdg-open", path])
+
 
 class StreamerThread(object):
     def __init__(self, src=0):
@@ -65,6 +68,7 @@ class StreamerThread(object):
                 (self.status, self.frame) = self.capture.read()
             time.sleep(self.FPS)
 
+
 class ProcessBar:
     def __init__(self, bar_length, total, before="⬛", after="🟨"):
         self.bar_length = bar_length
@@ -86,9 +90,11 @@ class ProcessBar:
         info_text += f"(ETR: {int(estimated_remaining_time // 60)} min {int(estimated_remaining_time % 60)} sec)"
         return info_text
 
+
 logo_image = cv2.imread("./assets/images/logo.png", cv2.IMREAD_UNCHANGED)
 
-def add_logo_to_image(img, logo = logo_image):
+
+def add_logo_to_image(img, logo=logo_image):
     logo_size = int(img.shape[1] * 0.1)
     logo = cv2.resize(logo, (logo_size, logo_size))
     if logo.shape[2] == 4:
@@ -98,6 +104,9 @@ def add_logo_to_image(img, logo = logo_image):
     padding = int(logo_size * 0.1)
     roi = img.shape[0] - logo_size - padding, img.shape[1] - logo_size - padding
     for c in range(0, 3):
-        img[roi[0]:roi[0] + logo_size, roi[1]:roi[1] + logo_size, c] = \
-            (alpha / 255.0) * logo[:, :, c] + (1 - alpha / 255.0) * img[roi[0]:roi[0] + logo_size, roi[1]:roi[1] + logo_size, c]
+        img[roi[0] : roi[0] + logo_size, roi[1] : roi[1] + logo_size, c] = (
+            alpha / 255.0
+        ) * logo[:, :, c] + (1 - alpha / 255.0) * img[
+            roi[0] : roi[0] + logo_size, roi[1] : roi[1] + logo_size, c
+        ]
     return img

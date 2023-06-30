@@ -18,14 +18,21 @@ from moviepy.editor import VideoFileClip, ImageSequenceClip
 from face_analyser import detect_conditions, analyse_face
 from utils import trim_video, StreamerThread, ProcessBar, open_directory
 from face_parsing import init_parser, swap_regions, mask_regions, mask_regions_to_list
-from swapper import swap_face, swap_face_with_condition, swap_specific, swap_options_list
+from swapper import (
+    swap_face,
+    swap_face_with_condition,
+    swap_specific,
+    swap_options_list,
+)
 
 ## ------------------------------ USER ARGS ------------------------------
 
-parser = argparse.ArgumentParser(description='Swap-Mukham Face Swapper')
-parser.add_argument('--out_dir', help='Default Output directory', default=os.getcwd())
-parser.add_argument('--cuda', action='store_true', help='Enable cuda', default=False)
-parser.add_argument('--colab', action='store_true', help='Enable colab mode', default=False)
+parser = argparse.ArgumentParser(description="Swap-Mukham Face Swapper")
+parser.add_argument("--out_dir", help="Default Output directory", default=os.getcwd())
+parser.add_argument("--cuda", action="store_true", help="Enable cuda", default=False)
+parser.add_argument(
+    "--colab", action="store_true", help="Enable colab mode", default=False
+)
 user_args = parser.parse_args()
 
 ## ------------------------------ DEFAULTS ------------------------------
@@ -41,8 +48,18 @@ DETECT_CONDITION = "left most"
 DETECT_SIZE = 640
 DETECT_THRESH = 0.6
 NUM_OF_SRC_SPECIFIC = 10
-MASK_INCLUDE = ["Skin","R-Eyebrow","L-Eyebrow","L-Eye","R-Eye","Nose","L-Lip","U-Lip","Chin"]
-MASK_EXCLUDE = ["R-Ear","L-Ear"]
+MASK_INCLUDE = [
+    "Skin",
+    "R-Eyebrow",
+    "L-Eyebrow",
+    "L-Eye",
+    "R-Eye",
+    "Nose",
+    "L-Lip",
+    "U-Lip",
+    "Chin",
+]
+MASK_EXCLUDE = ["R-Ear", "L-Ear"]
 MASK_BLUR = 25
 
 FACE_SWAPPER = None
@@ -61,18 +78,23 @@ if USE_CUDA:
         print("\n********** Running on CUDA **********\n")
         PROVIDER = ["CUDAExecutionProvider", "CPUExecutionProvider"]
     else:
+        USE_CUDA = False
         print("\n********** CUDA unavailable running on CPU **********\n")
 else:
+    USE_CUDA = False
     print("\n********** Running on CPU **********\n")
 
 
 ## ------------------------------ LOAD MODELS ------------------------------
 
+
 def load_face_analyser_model(name="buffalo_l"):
     global FACE_ANALYSER
     if FACE_ANALYSER is None:
         FACE_ANALYSER = insightface.app.FaceAnalysis(name=name, providers=PROVIDER)
-        FACE_ANALYSER.prepare(ctx_id=0, det_size=(DETECT_SIZE, DETECT_SIZE), det_thresh=DETECT_THRESH)
+        FACE_ANALYSER.prepare(
+            ctx_id=0, det_size=(DETECT_SIZE, DETECT_SIZE), det_thresh=DETECT_THRESH
+        )
 
 
 def load_face_swapper_model(name="./assets/pretrained_models/inswapper_128.onnx"):
@@ -95,10 +117,12 @@ def load_face_parser_model(name="./assets/pretrained_models/79999_iter.pth"):
     if FACE_PARSER is None:
         FACE_PARSER = init_parser(name)
 
+
 load_face_analyser_model()
 load_face_swapper_model()
 
 ## ------------------------------ MAIN PROCESS ------------------------------
+
 
 def process(
     input_type,
@@ -124,7 +148,7 @@ def process(
     global PREVIEW
     WORKSPACE, OUTPUT_FILE, PREVIEW = None, None, None
 
-## ------------------------------ GUI UPDATE FUNC ------------------------------
+    ## ------------------------------ GUI UPDATE FUNC ------------------------------
 
     def ui_before():
         return (
@@ -150,7 +174,7 @@ def process(
             gr.update(value=OUTPUT_FILE, visible=True),
         )
 
-## ------------------------------ LOAD PENDING MODELS ------------------------------
+    ## ------------------------------ LOAD PENDING MODELS ------------------------------
     start_time = time.time()
     specifics = list(specifics)
     half = len(specifics) // 2
@@ -176,28 +200,43 @@ def process(
     mi = mask_regions_to_list(mask_include)
     me = mask_regions_to_list(mask_exclude)
     models = {
-        'swap':FACE_SWAPPER,
-        'enhance':FACE_ENHANCER,
-        'enhance_sett':face_enhance,
-        'face_parser':FACE_PARSER,
-        'face_parser_sett':(enable_face_parser, mi, me, int(mask_blur))
+        "swap": FACE_SWAPPER,
+        "enhance": FACE_ENHANCER,
+        "enhance_sett": face_enhance,
+        "face_parser": FACE_PARSER,
+        "face_parser_sett": (enable_face_parser, mi, me, int(mask_blur)),
     }
 
-## ------------------------------ ANALYSE SOURCE & SPECIFIC ------------------------------
+    ## ------------------------------ ANALYSE SOURCE & SPECIFIC ------------------------------
 
     analysed_source_specific = []
     if condition == "Specific Face":
         for source, specific in zip(sources, specifics):
             if source is None or specific is None:
                 continue
-            analysed_source = analyse_face(source, FACE_ANALYSER, return_single_face=True, detect_condition=DETECT_CONDITION)
-            analysed_specific = analyse_face(specific, FACE_ANALYSER, return_single_face=True, detect_condition=DETECT_CONDITION)
+            analysed_source = analyse_face(
+                source,
+                FACE_ANALYSER,
+                return_single_face=True,
+                detect_condition=DETECT_CONDITION,
+            )
+            analysed_specific = analyse_face(
+                specific,
+                FACE_ANALYSER,
+                return_single_face=True,
+                detect_condition=DETECT_CONDITION,
+            )
             analysed_source_specific.append([analysed_source, analysed_specific])
     else:
         source = cv2.imread(source_path)
-        analysed_source = analyse_face(source, FACE_ANALYSER, return_single_face=True, detect_condition=DETECT_CONDITION)
+        analysed_source = analyse_face(
+            source,
+            FACE_ANALYSER,
+            return_single_face=True,
+            detect_condition=DETECT_CONDITION,
+        )
 
-## ------------------------------ IMAGE ------------------------------
+    ## ------------------------------ IMAGE ------------------------------
 
     if input_type == "Image":
         target = cv2.imread(image_path)
@@ -212,12 +251,7 @@ def process(
             )
         else:
             swapped = swap_face_with_condition(
-                target,
-                analysed_target,
-                analysed_source,
-                condition,
-                age,
-                models
+                target, analysed_target, analysed_source, condition, age, models
             )
 
         filename = os.path.join(output_path, output_name + ".png")
@@ -231,7 +265,7 @@ def process(
 
         yield f"Completed in {int(_min)} min {int(_sec)} sec.", *ui_after()
 
-## ------------------------------ VIDEO ------------------------------
+    ## ------------------------------ VIDEO ------------------------------
 
     elif input_type == "Video":
         temp_path = os.path.join(output_path, output_name, "sequence")
@@ -246,7 +280,9 @@ def process(
         process_bar = ProcessBar(30, total_frames)
         yield "### \n ⌛ Analysing...", *ui_before()
         for i, frame in enumerate(video_clip.iter_frames()):
-            analysed_targets.append(analyse_face(frame, FACE_ANALYSER, return_single_face=False))
+            analysed_targets.append(
+                analyse_face(frame, FACE_ANALYSER, return_single_face=False)
+            )
             info_text = "Analysing Faces || "
             info_text += process_bar.get(i)
             print("\033[1A\033[K", end="", flush=True)
@@ -274,12 +310,7 @@ def process(
                 )
             else:
                 swapped = swap_face_with_condition(
-                    frame,
-                    analysed_target,
-                    analysed_source,
-                    condition,
-                    age,
-                    models
+                    frame, analysed_target, analysed_source, condition, age, models
                 )
 
             image_path = os.path.join(temp_path, f"frame_{i}.png")
@@ -319,11 +350,16 @@ def process(
 
         yield f"✔️ Completed in {int(_min)} min {int(_sec)} sec.", *ui_after_vid()
 
-## ------------------------------ DIRECTORY ------------------------------
+    ## ------------------------------ DIRECTORY ------------------------------
 
     elif input_type == "Directory":
         source = cv2.imread(source_path)
-        source = analyse_face(source, FACE_ANALYSER, return_single_face=True, detect_condition=DETECT_CONDITION)
+        source = analyse_face(
+            source,
+            FACE_ANALYSER,
+            return_single_face=True,
+            detect_condition=DETECT_CONDITION,
+        )
         extensions = ["jpg", "jpeg", "png", "bmp", "tiff", "ico", "webp"]
         temp_path = os.path.join(output_path, output_name)
         if os.path.exists(temp_path):
@@ -340,7 +376,9 @@ def process(
         filename = None
         for i, file_path in enumerate(files):
             target = cv2.imread(file_path)
-            analysed_target = analyse_face(target, FACE_ANALYSER, return_single_face=False)
+            analysed_target = analyse_face(
+                target, FACE_ANALYSER, return_single_face=False
+            )
 
             if condition == "Specific Face":
                 swapped = swap_specific(
@@ -352,12 +390,7 @@ def process(
                 )
             else:
                 swapped = swap_face_with_condition(
-                    target,
-                    analysed_target,
-                    analysed_source,
-                    condition,
-                    age,
-                    models
+                    target, analysed_target, analysed_source, condition, age, models
                 )
 
             filename = os.path.join(temp_path, os.path.basename(file_path))
@@ -374,7 +407,7 @@ def process(
 
         yield f"✔️ Completed in {int(_min)} min {int(_sec)} sec.", *ui_after()
 
-## ------------------------------ STREAM ------------------------------
+    ## ------------------------------ STREAM ------------------------------
 
     elif input_type == "Stream":
         yield "### \n ⌛ Starting...", *ui_before()
@@ -385,7 +418,9 @@ def process(
         while True:
             try:
                 target = STREAMER.frame
-                analysed_target = analyse_face(target, FACE_ANALYSER, return_single_face=False)
+                analysed_target = analyse_face(
+                    target, FACE_ANALYSER, return_single_face=False
+                )
                 if condition == "Specific Face":
                     swapped = swap_specific(
                         target,
@@ -396,12 +431,7 @@ def process(
                     )
                 else:
                     swapped = swap_face_with_condition(
-                        target,
-                        analysed_target,
-                        analysed_source,
-                        condition,
-                        age,
-                        models
+                        target, analysed_target, analysed_source, condition, age, models
                     )
                 PREVIEW = swapped[:, :, ::-1]
                 yield f"Streaming...", *ui_before()
@@ -411,6 +441,7 @@ def process(
 
 
 ## ------------------------------ GRADIO FUNC ------------------------------
+
 
 def update_radio(value):
     if value == "Image":
@@ -568,13 +599,17 @@ with gr.Blocks(css=css) as interface:
                         label="Detection Size", value=DETECT_SIZE, interactive=True
                     )
                     detection_threshold = gr.Number(
-                        label="Detection Threshold", value=DETECT_THRESH, interactive=True
+                        label="Detection Threshold",
+                        value=DETECT_THRESH,
+                        interactive=True,
                     )
                     apply_detection_settings = gr.Button("Apply settings")
 
                 with gr.Tab("📤 Output Settings"):
                     output_directory = gr.Text(
-                        label="Output Directory", value=DEF_OUTPUT_PATH, interactive=True
+                        label="Output Directory",
+                        value=DEF_OUTPUT_PATH,
+                        interactive=True,
                     )
                     output_name = gr.Text(
                         label="Output Name", value="Result", interactive=True
@@ -588,14 +623,33 @@ with gr.Blocks(css=css) as interface:
                         enable_face_enhance = gr.Checkbox(
                             label="Enable GFPGAN", value=False, interactive=True
                         )
-                    with gr.Accordion("Advanced Mask", open=True):
+                    with gr.Accordion("Advanced Mask", open=False):
                         enable_face_parser_mask = gr.Checkbox(
-                            label="Enable Face Parsing", value=False, interactive=True
+                            label="Enable Face Parsing",
+                            value=False,
+                            interactive=USE_CUDA,
                         )
 
-                        mask_include = gr.Dropdown(mask_regions.keys(), value=MASK_INCLUDE, multiselect=True, label="Include", interactive=True)
-                        mask_exclude = gr.Dropdown(mask_regions.keys(), value=MASK_EXCLUDE, multiselect=True, label="Exclude", interactive=True)
-                        mask_blur = gr.Number(label="Blur Mask", value=MASK_BLUR, minimum=0, interactive=True)
+                        mask_include = gr.Dropdown(
+                            mask_regions.keys(),
+                            value=MASK_INCLUDE,
+                            multiselect=True,
+                            label="Include",
+                            interactive=USE_CUDA,
+                        )
+                        mask_exclude = gr.Dropdown(
+                            mask_regions.keys(),
+                            value=MASK_EXCLUDE,
+                            multiselect=True,
+                            label="Exclude",
+                            interactive=USE_CUDA,
+                        )
+                        mask_blur = gr.Number(
+                            label="Blur Mask",
+                            value=MASK_BLUR,
+                            minimum=0,
+                            interactive=USE_CUDA,
+                        )
 
                 source_image_input = gr.Image(
                     label="Source face", type="filepath", interactive=True
@@ -693,8 +747,12 @@ with gr.Blocks(css=css) as interface:
                 )
 
                 with gr.Row():
-                    output_directory_button = gr.Button("📂", interactive=False, visible=not USE_COLAB)
-                    output_video_button = gr.Button("🎬", interactive=False, visible=not USE_COLAB)
+                    output_directory_button = gr.Button(
+                        "📂", interactive=False, visible=not USE_COLAB
+                    )
+                    output_video_button = gr.Button(
+                        "🎬", interactive=False, visible=not USE_COLAB
+                    )
 
                 with gr.Column():
                     gr.Markdown(
@@ -704,7 +762,7 @@ with gr.Blocks(css=css) as interface:
                         "### [Source code](https://github.com/harisreedhar/Swap-Mukham) . [Disclaimer](https://github.com/harisreedhar/Swap-Mukham#disclaimer) . [Gradio](https://gradio.app/)"
                     )
 
-## ------------------------------ GRADIO EVENTS ------------------------------
+    ## ------------------------------ GRADIO EVENTS ------------------------------
 
     set_slider_range_event = set_slider_range_btn.click(
         video_changed,
@@ -811,4 +869,4 @@ if __name__ == "__main__":
     if USE_COLAB:
         print("Running in colab mode")
 
-    interface.queue(concurrency_count=2, max_size=20).launch(share = USE_COLAB)
+    interface.queue(concurrency_count=2, max_size=20).launch(share=USE_COLAB)
