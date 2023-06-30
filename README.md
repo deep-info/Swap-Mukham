@@ -14,6 +14,7 @@ git clone https://github.com/harisreedhar/Swap-Mukham
 cd Swap-Mukham
 conda create -n swapmukham python=3.10 -y
 conda activate swapmukham
+pip install torch==2.0.0+cpu torchvision==0.15.1+cpu torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements_cpu.txt
 python app.py
 ````
