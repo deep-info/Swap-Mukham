@@ -4,9 +4,6 @@
 
 A simple face swapper based on insightface inswapper heavily inspired by roop.
 
-![swapmukham_faceenhanced](https://github.com/harisreedhar/Swap-Mukham/assets/46858047/c0c34eac-6b48-4c2f-9222-a85e8fb76b43)
-
-
 ## Features
 - Easy to use Gradio gui
 - Support Image, Video, Directory inputs
@@ -15,6 +12,12 @@ A simple face swapper based on insightface inswapper heavily inspired by roop.
 - Face enhancer (GFPGAN)
 - Face parsing mask
 - colab support
+
+![swap_mukham_new](https://github.com/harisreedhar/Swap-Mukham/assets/46858047/8817b72e-6047-448f-b942-48dd59fca34c)
+
+Comparison
+
+![10](https://github.com/harisreedhar/Swap-Mukham/assets/46858047/feb95203-ea40-4617-9505-db0dae1996c3)
 
 ## Installation
 ### CPU Install
