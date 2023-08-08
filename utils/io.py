@@ -100,7 +100,7 @@ def extract_frames(video_path, destination, remove_existing=True, fps=30):
     return False, None
 
 
-def merge_frames(sequence_directory, pattern, destination, fps=30, ffmpeg_path="./ffmpeg/ffmpeg"):
+def merge_frames(sequence_directory, pattern, destination, fps=30, ffmpeg_path=None):
     ffmpeg_path = 'ffmpeg' if ffmpeg_path is None else ffmpeg_path
     cmd = [
         ffmpeg_path,
@@ -123,7 +123,7 @@ def merge_frames(sequence_directory, pattern, destination, fps=30, ffmpeg_path="
     return False, None
 
 
-def mux_audio(source, target, output, ffmpeg_path="./ffmpeg/ffmpeg"):
+def mux_audio(source, target, output, ffmpeg_path=None):
     ffmpeg_path = 'ffmpeg' if ffmpeg_path is None else ffmpeg_path
     extracted_audio_path = os.path.join(os.path.dirname(output), 'extracted_audio.aac')
     cmd1 = [
