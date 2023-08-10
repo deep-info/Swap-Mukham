@@ -86,14 +86,15 @@ class SwapMukham:
 
     def process_frame(self, data):
         frame, custom_mask = data
-        overwrite = False
-        frame_path = None
-        if isinstance(frame, str):
-            overwrite = True
-            frame_path = frame
-            frame = cv2.imread(frame_path)
-        if isinstance(custom_mask, str):
-            custom_mask = cv2.imread(custom_mask)
+
+        if len(frame.shape) == 2 or (len(frame.shape) == 3 and frame.shape[2] == 1):
+            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+
+        alpha = None
+        if frame.shape[2] == 4:
+            alpha = frame[:, :, 3]
+            frame = frame[:, :, :3]
+
         analysed_target_faces = self.analyser.get_faces(frame, scale=self.face_scale)
         _frame = frame.copy()
         condition = self.swap_condition
@@ -126,10 +127,11 @@ class SwapMukham:
             _mask = custom_mask
             _frame = _mask * frame.astype('float32') + (1 - _mask) * _frame.astype('float32')
             _frame = _frame.clip(0,255).astype('uint8')
-        if overwrite:
-            cv2.imwrite(frame, _frame)
-        else:
-            return _frame
+
+        if alpha is not None:
+            _frame = np.dstack((_frame, alpha))
+
+        return _frame
 
     def swap_face(self, frame, trg_face, src_face):
         generated_face, matrix = self.swapper.forward(frame, trg_face, src_face, n_pass=self.num_of_pass)

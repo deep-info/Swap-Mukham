@@ -78,18 +78,19 @@ def get_video_fps(video_path):
     return fps
 
 
-def extract_frames(video_path, destination, remove_existing=True, fps=30):
+def ffmpeg_extract_frames(video_path, destination, remove_existing=True, fps=30, name='frame_%d.jpg', ffmpeg_path=None):
+    ffmpeg_path = 'ffmpeg' if ffmpeg_path is None else ffmpeg_path
     destination = create_directory(destination, remove_existing=remove_existing)
     cmd = [
-        'ffmpeg',
-        '-loglevel', 'error',
+        ffmpeg_path,
+        '-loglevel', 'info',
         '-hwaccel', 'auto',
         '-i', video_path,
-        '-q:v', '18',
+        '-q:v', '3',
         '-pix_fmt', 'rgb24',
         '-vf', 'fps=' + str(fps),
         '-y',
-        os.path.join(destination, 'frame_%04d.jpg')
+        os.path.join(destination, name)
     ]
     process = subprocess.Popen(cmd)
     process.communicate()
@@ -100,7 +101,7 @@ def extract_frames(video_path, destination, remove_existing=True, fps=30):
     return False, None
 
 
-def merge_frames(sequence_directory, pattern, destination, fps=30, ffmpeg_path=None):
+def ffmpeg_merge_frames(sequence_directory, pattern, destination, fps=30, ffmpeg_path=None):
     ffmpeg_path = 'ffmpeg' if ffmpeg_path is None else ffmpeg_path
     cmd = [
         ffmpeg_path,
@@ -123,7 +124,56 @@ def merge_frames(sequence_directory, pattern, destination, fps=30, ffmpeg_path=N
     return False, None
 
 
-def mux_audio(source, target, output, ffmpeg_path=None):
+def ffmpeg_merge_frames2(sequence_directory, pattern, destination, fps=30, ffmpeg_path=None):
+    ffmpeg_path = 'ffmpeg' if ffmpeg_path is None else ffmpeg_path
+    cmd = [
+        ffmpeg_path,
+        '-framerate', str(fps),
+        '-pattern_type', 'glob',
+        '-i', os.path.join(sequence_directory, pattern),
+        '-c:v', 'libx264',
+        '-crf', '20',
+        '-pix_fmt', 'yuv420p',
+        '-y', destination
+    ]
+
+    process = subprocess.Popen(cmd)
+    process.communicate()
+    if process.returncode == 0:
+        return True, destination
+    else:
+        print(f"Error: Failed to merge image sequence.")
+    return False, None
+
+
+def ffmpeg_replace_video_segments(main_video_path, sub_clips_info, output_path, ffmpeg_path="ffmpeg"):
+    ffmpeg_path = 'ffmpeg' if ffmpeg_path is None else ffmpeg_path
+    filter_complex = ""
+
+    filter_complex += f"[0:v]split=2[v0][main_end]; "
+    filter_complex += f"[1:v]split={len(sub_clips_info)}{', '.join([f'[v{index + 1}]' for index in range(len(sub_clips_info))])}; "
+
+    overlay_exprs = "".join([f"[v{index + 1}]" for index in range(len(sub_clips_info))])
+    overlay_filters = f"[main_end][{overlay_exprs}]overlay=eof_action=pass[vout]; "
+    filter_complex += overlay_filters
+
+    cmd = [
+        ffmpeg_path, '-i', main_video_path,
+    ]
+
+    for sub_clip_path, _, _ in sub_clips_info:
+        cmd.extend(['-i', sub_clip_path])
+
+    cmd.extend([
+        '-filter_complex', filter_complex,
+        '-map', '[vout]',
+        output_path
+    ])
+
+    subprocess.run(cmd)
+
+
+def ffmpeg_mux_audio(source, target, output, ffmpeg_path=None):
     ffmpeg_path = 'ffmpeg' if ffmpeg_path is None else ffmpeg_path
     extracted_audio_path = os.path.join(os.path.dirname(output), 'extracted_audio.aac')
     cmd1 = [
@@ -142,7 +192,7 @@ def mux_audio(source, target, output, ffmpeg_path=None):
         return False, target
 
     cmd2 = [
-        'ffmpeg',
+        ffmpeg_path,
         '-loglevel', 'info',
         '-hwaccel', 'auto',
         '-i', target,

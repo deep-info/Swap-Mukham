@@ -36,7 +36,6 @@ def get_single_face(faces, method="best detection"):
     if total_faces == 1:
         return faces[0]
 
-    print(f"{total_faces} face detected. Using {method} face.")
     if method == "best detection":
         return sorted(faces, key=lambda face: face["det_score"])[-1]
     elif method == "left most":

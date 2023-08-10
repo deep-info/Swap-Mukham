@@ -28,3 +28,5 @@ DETECT_THRESHOLD = 0.6
 NUM_OF_SRC_SPECIFIC = 10
 
 MAX_THREADS = 2
+
+FFMPEG_PATH = "./ffmpeg/ffmpeg" if os.path.exists("./ffmpeg/ffmpeg") else None
