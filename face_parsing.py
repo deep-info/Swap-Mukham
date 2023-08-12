@@ -1,6 +1,4 @@
 import cv2
-import torch
-import onnx
 import onnxruntime
 import numpy as np
 
@@ -28,9 +26,10 @@ mask_regions = {
 
 
 class FaceParser:
-    def __init__(self, model_path=None, provider=['CPUExecutionProvider']):
-        self.session_options = onnxruntime.SessionOptions()
-        self.session_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
+    def __init__(self, model_path=None, provider=['CPUExecutionProvider'], session_options=None):
+        self.session_options = session_options
+        if self.session_options is None:
+            self.session_options = onnxruntime.SessionOptions()
         self.session = onnxruntime.InferenceSession(model_path, sess_options=self.session_options, providers=provider)
         self.mean = np.array([0.485, 0.456, 0.406]).reshape((1, 1, 3))
         self.std = np.array([0.229, 0.224, 0.225]).reshape((1, 1, 3))

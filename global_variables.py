@@ -29,4 +29,5 @@ NUM_OF_SRC_SPECIFIC = 10
 
 MAX_THREADS = 2
 
-FFMPEG_PATH = "./ffmpeg/ffmpeg" if os.path.exists("./ffmpeg/ffmpeg") else None
+VIDEO_QUALITY_LIST = ["poor", "low", "medium", "high", "best"]
+VIDEO_QUALITY = "high"

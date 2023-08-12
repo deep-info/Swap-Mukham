@@ -1,6 +1,5 @@
 import cv2
 import torch
-import onnx
 import onnxruntime
 import numpy as np
 import threading
@@ -9,11 +8,11 @@ import time
 lock = threading.Lock()
 
 class GPEN:
-    def __init__(self, model_path="GPEN-BFR-512.onnx", provider=["CPUExecutionProvider"]):
-        model = onnx.load(model_path)
-        session_options = onnxruntime.SessionOptions()
-        session_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
-        self.session = onnxruntime.InferenceSession(model_path, sess_options=session_options, providers=provider)
+    def __init__(self, model_path="GPEN-BFR-512.onnx", provider=["CPUExecutionProvider"], session_options=None):
+        self.session_options = session_options
+        if self.session_options is None:
+            self.session_options = onnxruntime.SessionOptions()
+        self.session = onnxruntime.InferenceSession(model_path, sess_options=self.session_options, providers=provider)
         self.resolution = self.session.get_inputs()[0].shape[-2:]
 
     def preprocess(self, img):

@@ -1,12 +1,32 @@
 import os
 import cv2
-import torch
 import threading
-import insightface
 import numpy as np
 from tqdm import tqdm
-import multiprocessing
 import concurrent.futures
+import default_paths as dp
+from dataclasses import dataclass
+from utils.arcface import ArcFace
+from utils.retinaface import RetinaFace
+
+
+@dataclass
+class Face:
+    bbox: np.ndarray
+    kps: np.ndarray
+    det_score: float
+    embedding: np.ndarray
+    gender: int
+    age: int
+
+    def __getitem__(self, key):
+        return getattr(self, key)
+
+    def __setitem__(self, key, value):
+        if hasattr(self, key):
+            setattr(self, key, value)
+        else:
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{key}'")
 
 single_face_detect_conditions = [
     "best detection",
@@ -33,6 +53,10 @@ face_detect_conditions =  multi_face_detect_conditions + single_face_detect_cond
 
 def get_single_face(faces, method="best detection"):
     total_faces = len(faces)
+
+    if total_faces == 0:
+        return None
+
     if total_faces == 1:
         return faces[0]
 
@@ -74,24 +98,32 @@ def is_similar_face(face1, face2, threshold=0.6):
 
 
 class AnalyseFace:
-    def __init__(self, name='buffalo_l', provider=["CPUExecutionProvider"]):
-        self.analyser = insightface.app.FaceAnalysis(
-            name=name,
-            allowed_modules=['detection', 'recognition', 'genderage'],
-            providers=provider
-        )
+    def __init__(self, provider=["CPUExecutionProvider"], session_options=None):
+        self.detector = RetinaFace(model_file=dp.RETINAFACE_PATH, provider=provider, session_options=session_options)
+        self.recognizer = ArcFace(model_file=dp.ARCFACE_PATH, provider=provider, session_options=session_options)
+        self.detect_condition = "best detection"
+        self.detection_size = (640, 640)
+        self.detection_threshold = 0.5
 
-    def prepare(self, detection_size=640, detection_threshold=0.6, detect_condition="best detection"):
-        self.detection_size = int(detection_size)
-        self.detection_threshold = float(detection_threshold)
-        self.detect_condition = detect_condition
-        self.analyser.prepare(ctx_id=0, det_size=(self.detection_size , self.detection_size ), det_thresh=self.detection_threshold)
+    def analyser(self, img):
+        bboxes, kpss = self.detector.detect(img, input_size=self.detection_size, det_thresh=self.detection_threshold)
+        faces = []
+        for i in range(bboxes.shape[0]):
+            bbox = bboxes[i, 0:4]
+            det_score = bboxes[i, 4]
+            kps = None
+            if kpss is not None:
+                kps = kpss[i]
+            feat = self.recognizer.get(img, kpss[i])
+            face = Face(bbox=bbox, kps=kps, det_score=det_score, embedding=feat, gender=None, age=None)
+            faces.append(face)
+        return faces
 
     def get_faces(self, image, scale=1.):
         if isinstance(image, str):
             image = cv2.imread(image)
 
-        faces = self.analyser.get(image)
+        faces = self.analyser(image)
 
         if scale != 1: # landmark-scale
             for i, face in enumerate(faces):

@@ -1,15 +1,50 @@
+print(
+"""
+
+  /$$$$$$                                       /$$      /$$         /$$      /$$
+ /$$__  $$                                     | $$$    /$$$        | $$     | $$
+| $$  \__//$$  /$$  /$$ /$$$$$$  /$$$$$$       | $$$$  /$$$$/$$   /$| $$   /$| $$$$$$$  /$$$$$$ /$$$$$$/$$$$
+|  $$$$$$| $$ | $$ | $$|____  $$/$$__  $$      | $$ $$/$$ $| $$  | $| $$  /$$| $$__  $$|____  $| $$_  $$_  $$
+ \____  $| $$ | $$ | $$ /$$$$$$| $$  \ $$      | $$  $$$| $| $$  | $| $$$$$$/| $$  \ $$ /$$$$$$| $$ \ $$ \ $$
+ /$$  \ $| $$ | $$ | $$/$$__  $| $$  | $$      | $$\  $ | $| $$  | $| $$_  $$| $$  | $$/$$__  $| $$ | $$ | $$
+|  $$$$$$|  $$$$$/$$$$|  $$$$$$| $$$$$$$/      | $$ \/  | $|  $$$$$$| $$ \  $| $$  | $|  $$$$$$| $$ | $$ | $$
+ \______/ \_____/\___/ \_______| $$____/       |__/     |__/\______/|__/  \__|__/  |__/\_______|__/ |__/ |__/
+                               | $$
+                               | $$
+                               |__/
+"""
+)
 import os
 import cv2
 import time
-import torch
 import shutil
 import base64
-import argparse
 import datetime
+import argparse
 import numpy as np
 import gradio as gr
 from tqdm import tqdm
 import concurrent.futures
+
+import threading
+cv_reader_lock = threading.Lock()
+
+## ------------------------------ USER ARGS ------------------------------
+
+parser = argparse.ArgumentParser(description="Swap-Mukham Face Swapper")
+parser.add_argument("--out_dir", help="Default Output directory", default=os.getcwd())
+parser.add_argument("--max_threads", type=int, help="Max num of threads to use", default=2)
+parser.add_argument("--colab", action="store_true", help="Colab mode", default=False)
+parser.add_argument("--cpu", action="store_true", help="Enable cpu mode", default=False)
+parser.add_argument("--prefer_text_widget", action="store_true", help="Replaces target video widget with text widget", default=False)
+user_args = parser.parse_args()
+
+USE_CPU = user_args.cpu
+
+if not USE_CPU:
+    import torch
+
+import default_paths as dp
 import global_variables as gv
 
 from swap_mukham import SwapMukham
@@ -24,6 +59,7 @@ from utils.image import (
     resolution_map,
     fast_pil_encode,
     fast_numpy_encode,
+    get_crf_for_resolution,
 )
 from utils.io import (
     open_directory,
@@ -39,52 +75,32 @@ from utils.io import (
 gr.processing_utils.encode_pil_to_base64 = fast_pil_encode
 gr.processing_utils.encode_array_to_base64 = fast_numpy_encode
 
-import threading
-lock = threading.Lock()
-
-## ------------------------------ USER ARGS ------------------------------
-
-parser = argparse.ArgumentParser(description="Swap-Mukham Face Swapper")
-parser.add_argument("--out_dir", help="Default Output directory", default=os.getcwd())
-parser.add_argument(
-    "--max_threads", type=int, help="Maximum amount of threads to use", default=2
-)
-parser.add_argument(
-    "--colab", action="store_true", help="Enable colab mode", default=False
-)
-user_args = parser.parse_args()
-
-## ------------------------------ DEFAULTS ------------------------------
-
 gv.USE_COLAB = user_args.colab
 gv.MAX_THREADS = user_args.max_threads
 gv.DEFAULT_OUTPUT_PATH = user_args.out_dir
 
+PREFER_TEXT_WIDGET = user_args.prefer_text_widget
+
 WORKSPACE = None
 OUTPUT_FILE = None
 
+preferred_device = "cpu" if USE_CPU else "cuda"
 DEVICE_LIST = device_types_list
-DEVICE, PROVIDER = get_device_and_provider(device="cuda")
+DEVICE, PROVIDER, OPTIONS = get_device_and_provider(device=preferred_device)
 SWAP_MUKHAM = SwapMukham(device=DEVICE)
 
 IS_RUNNING = False
 CURRENT_FRAME = None
 COLLECTED_FACES = []
 FOREGROUND_MASK_DICT = {}
-
-
-def load_nsfw_detector_model(path="./assets/pretrained_models/open-nsfw.onnx"):
-    if gv.NSFW_DETECTOR is None:
-        gv.NSFW_DETECTOR = NSFWChecker(model_path=path, providers=PROVIDER)
-
-
-load_nsfw_detector_model()
+NSFW_CACHE = {}
 
 
 ## ------------------------------ MAIN PROCESS ------------------------------
 
 
 def process(
+    test_mode,
     target_type,
     image_path,
     video_path,
@@ -104,6 +120,7 @@ def process(
     face_enhancer_name,
     face_upscaler_opacity,
     use_face_parsing,
+    parse_from_target,
     mask_regions,
     mask_blur_amount,
     mask_erode_amount,
@@ -118,6 +135,10 @@ def process(
     number_of_threads,
     use_frame_selection,
     frame_selection_ranges,
+    video_quality,
+    face_detection_condition,
+    face_detection_size,
+    face_detection_threshold,
     progress=gr.Progress(track_tqdm=True),
     *specifics,
 ):
@@ -135,7 +156,7 @@ def process(
             gr.update(visible=True, value=None),
             gr.update(interactive=False),
             gr.update(interactive=False),
-            gr.update(visible=False),
+            gr.update(visible=False, value=None),
         )
 
     def ui_after():
@@ -143,7 +164,7 @@ def process(
             gr.update(visible=True, value=PREVIEW),
             gr.update(interactive=True),
             gr.update(interactive=True),
-            gr.update(visible=False),
+            gr.update(visible=False, value=None),
         )
 
     def ui_after_vid():
@@ -154,7 +175,7 @@ def process(
             gr.update(value=OUTPUT_FILE, visible=True),
         )
 
-    if target_type != "Test":
+    if not test_mode:
         yield ui_before()  # resets ui preview
         progress(0, desc="Processing")
 
@@ -164,10 +185,10 @@ def process(
         lambda start_time: f"Completed in {int(total_exec_time(start_time)[0])} min {int(total_exec_time(start_time)[1])} sec."
     )
 
+    ## ------------------------------ PREPARE INPUTS ------------------------------
+
     if use_datetime_suffix:
         output_name = add_datetime_to_filename(output_name)
-
-    ## ------------------------------ PREPARE INPUTS & LOAD MODELS ------------------------------
 
     mask_regions = mask_regions_to_list(mask_regions)
 
@@ -199,6 +220,10 @@ def process(
         "swap_condition": swap_condition,
         "face_parse_regions": mask_regions,
         "use_face_parsing": use_face_parsing,
+        "face_detection_size": [int(face_detection_size), int(face_detection_size)],
+        "face_detection_threshold": face_detection_threshold,
+        "face_detection_condition": face_detection_condition,
+        "parse_from_target": parse_from_target
     }
 
     SWAP_MUKHAM.set_values(input_args)
@@ -211,19 +236,27 @@ def process(
         SWAP_MUKHAM.load_face_parser(device=DEVICE)
     SWAP_MUKHAM.analyse_source_faces(source_specifics)
 
+    mask = None
+    if use_foreground_mask and img_fg_mask is not None:
+        mask = img_fg_mask.get("mask", None)
+        mask = cv2.cvtColor(mask, cv2.COLOR_BGRA2RGB)
+        if fg_mask_softness > 0:
+            mask = cv2.blur(mask, (int(fg_mask_softness), int(fg_mask_softness)))
+        mask = mask.astype("float32") / 255.0
+
+    def nsfw_assertion(is_nsfw):
+        if is_nsfw:
+            message = "NSFW content detected !"
+            gr.Info(message)
+            assert not is_nsfw, message
+
     ## ------------------------------ IMAGE ------------------------------
 
-    if target_type == "Image":
+    if target_type == "Image" and not test_mode:
         target = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
 
-        mask = None
-        if use_foreground_mask:
-            mask = img_fg_mask.get("mask", None)
-            mask = cv2.cvtColor(mask, cv2.COLOR_BGRA2RGB)
-            if fg_mask_softness > 0:
-                mask = cv2.blur(mask, (int(fg_mask_softness), int(fg_mask_softness)))
-            mask = mask.astype("float32") / 255.0
-            assert mask.shape[:2] == target.shape[:2], "Target image & mask shape mismatch!"
+        is_nsfw = SWAP_MUKHAM.nsfw_detector.check_video(target)
+        nsfw_assertion(is_nsfw)
 
         output = SWAP_MUKHAM.process_frame(
             [target, mask]
@@ -240,12 +273,23 @@ def process(
 
     ## ------------------------------ VIDEO ------------------------------
 
-    elif target_type == "Video":
+    elif target_type == "Video" and not test_mode:
+        video_path = video_path.replace('"', '').strip()
+
+        if video_path in NSFW_CACHE.keys():
+            nsfw_assertion(NSFW_CACHE.get(video_path))
+        else:
+            is_nsfw = SWAP_MUKHAM.nsfw_detector.check_video(video_path)
+            NSFW_CACHE[video_path] = is_nsfw
+            nsfw_assertion(is_nsfw)
+
         temp_path = os.path.join(output_path, output_name)
         os.makedirs(temp_path, exist_ok=True)
 
         cap = cv2.VideoCapture(video_path)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS)
 
         is_in_range = lambda idx: any([int(rng[0]) <= idx <= int(rng[1]) for rng in frame_selection_ranges]) if use_frame_selection else True
@@ -254,7 +298,7 @@ def process(
 
         def swap_video_func(frame_index):
             if IS_RUNNING:
-                with lock:
+                with cv_reader_lock:
                     cap.set(cv2.CAP_PROP_POS_FRAMES, int(frame_index))
                     valid_frame, frame = cap.read()
 
@@ -286,8 +330,9 @@ def process(
             WORKSPACE = output_path
             out_without_audio = output_name + "_without_audio" + ".mp4"
             destination = os.path.join(output_path, out_without_audio)
+            crf = get_crf_for_resolution(max(width,height), video_quality)
             ret, destination = ffmpeg_merge_frames(
-                temp_path, f"frame_%d.{sequence_output_format}", destination, fps=fps, ffmpeg_path=gv.FFMPEG_PATH
+                temp_path, f"frame_%d.{sequence_output_format}", destination, fps=fps, crf=crf, ffmpeg_path=dp.FFMPEG_PATH
             )
             OUTPUT_FILE = destination
 
@@ -297,7 +342,7 @@ def process(
                 OUTPUT_FILE = destination
                 out_with_audio = out_without_audio.replace("_without_audio", "")
                 _ret, _destination = ffmpeg_mux_audio(
-                    video_path, out_without_audio, out_with_audio, ffmpeg_path=gv.FFMPEG_PATH
+                    video_path, out_without_audio, out_with_audio, ffmpeg_path=dp.FFMPEG_PATH
                 )
 
                 if _ret:
@@ -316,21 +361,26 @@ def process(
 
     ## ------------------------------ DIRECTORY ------------------------------
 
-    elif target_type == "Directory":
+    elif target_type == "Directory" and not test_mode:
         temp_path = os.path.join(output_path, output_name)
         temp_path = create_directory(temp_path, remove_existing=True)
 
+        directory_path = directory_path.replace('"', '').strip()
         image_paths = get_images_from_directory(directory_path)
+
+        is_nsfw = SWAP_MUKHAM.nsfw_detector.check_image_paths(image_paths)
+        nsfw_assertion(is_nsfw)
+
         new_image_paths = copy_files_to_directory(image_paths, temp_path)
 
-        def swap_video_func(img_path):
+        def swap_func(img_path):
             if IS_RUNNING:
                 frame = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
                 output = SWAP_MUKHAM.process_frame([frame, None])
                 cv2.imwrite(img_path, output)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=number_of_threads) as executor:
-            futures = [executor.submit(swap_video_func, img_path) for img_path in new_image_paths]
+            futures = [executor.submit(swap_func, img_path) for img_path in new_image_paths]
 
             with tqdm(total=len(new_image_paths), desc="Processing") as pbar:
                 for future in concurrent.futures.as_completed(futures):
@@ -346,16 +396,18 @@ def process(
 
     ## ------------------------------ STREAM ------------------------------
 
-    elif target_type == "Stream":
+    elif target_type == "Stream" and not test_mode:
         pass
 
     ## ------------------------------ TEST ------------------------------
 
-    elif target_type == "Test":
-        target = CURRENT_FRAME  # Change this soon
-        if target is not None and isinstance(target, np.ndarray):
+    if test_mode and target_type == "Video":
+        mask = None
+        if use_face_parsing_mask:
+            mask = FOREGROUND_MASK_DICT.get(current_idx, None)
+        if CURRENT_FRAME is not None and isinstance(CURRENT_FRAME, np.ndarray):
             PREVIEW = SWAP_MUKHAM.process_frame(
-                [target[:, :, ::-1], FOREGROUND_MASK_DICT.get(current_idx, None)]
+                [CURRENT_FRAME[:, :, ::-1], mask]
             )
             gr.Info(get_finsh_text(start_time))
             yield ui_after()
@@ -454,9 +506,9 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
 
                             with gr.Box(visible=True) as input_video_group:
                                 with gr.Column():
-                                    vid_widget = gr.Video if gv.USE_COLAB else gr.Text
-                                    video_input = vid_widget(
-                                        label="Target Video Path", interactive=True
+                                    video_widget = gr.Text if PREFER_TEXT_WIDGET else gr.Video
+                                    video_input = video_widget(
+                                        label="Target Video", interactive=True
                                     )
 
                                     ## ------------------------------ FRAME SELECTION ------------------------------
@@ -477,7 +529,7 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
 
                             with gr.Box(visible=False) as input_directory_group:
                                 directory_input = gr.Text(
-                                    label="Path", interactive=True
+                                    label="Target Image Directory", interactive=True
                                 )
 
                     ## ------------------------------ TAB MODEL ------------------------------
@@ -500,25 +552,24 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
                                     value=1,
                                     interactive=True,
                                 )
-                        with gr.Accordion("Detection", open=False):
-                            detect_condition_dropdown = gr.Dropdown(
+                        with gr.Accordion("Detection", open=True):
+                            face_detection_condition = gr.Dropdown(
                                 gv.SINGLE_FACE_DETECT_CONDITIONS,
                                 label="Condition",
                                 value=gv.DETECT_CONDITION,
                                 interactive=True,
                                 info="This condition is only used when multiple faces are detected on source or specific image.",
                             )
-                            detection_size = gr.Number(
+                            face_detection_size = gr.Number(
                                 label="Detection Size",
                                 value=gv.DETECT_SIZE,
                                 interactive=True,
                             )
-                            detection_threshold = gr.Number(
+                            face_detection_threshold = gr.Number(
                                 label="Detection Threshold",
                                 value=gv.DETECT_THRESHOLD,
                                 interactive=True,
                             )
-                            apply_detection_settings = gr.Button("Apply settings")
 
                     ## ------------------------------ TAB POST-PROCESS ------------------------------
 
@@ -542,11 +593,17 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
 
                         with gr.Accordion("Face Mask", open=False):
                             with gr.Group():
-                                use_face_parsing_mask = gr.Checkbox(
-                                    label="Enable Face Parsing",
-                                    value=False,
-                                    interactive=True,
-                                )
+                                with gr.Row():
+                                    use_face_parsing_mask = gr.Checkbox(
+                                        label="Enable Face Parsing",
+                                        value=False,
+                                        interactive=True,
+                                    )
+                                    parse_from_target = gr.Checkbox(
+                                        label="Parse from target",
+                                        value=False,
+                                        interactive=True,
+                                    )
                                 mask_regions = gr.Dropdown(
                                     gv.MASK_REGIONS,
                                     value=gv.MASK_REGIONS_DEFAULT,
@@ -633,11 +690,18 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
                                 label="Suffix date-time", value=True, interactive=True
                             )
                         with gr.Accordion("Video settings", open=True):
-                            sequence_output_format = gr.Dropdown(
-                                    ["jpg", "png"],
-                                    label="Sequence format",
-                                    value="jpg",
-                                    interactive=True,
+                            with gr.Row():
+                                sequence_output_format = gr.Dropdown(
+                                        ["jpg", "png"],
+                                        label="Sequence format",
+                                        value="jpg",
+                                        interactive=True,
+                                    )
+                                video_quality = gr.Dropdown(
+                                    gv.VIDEO_QUALITY_LIST,
+                                    label="Quality",
+                                    value=gv.VIDEO_QUALITY,
+                                    interactive=True
                                 )
                             keep_output_sequence = gr.Checkbox(
                                 label="Keep output sequence", value=False, interactive=True
@@ -724,7 +788,7 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
                     cancel_button = gr.Button("⛔ Cancel")
 
                 with gr.Box() as frame_slider_box:
-                    with gr.Row(elem_id="slider_row").style(equal_height=True):
+                    with gr.Row(elem_id="slider_row", equal_height=True):
                         set_slider_range_btn = gr.Button(
                             "Set Range", interactive=True, elem_id="refresh_slider"
                         )
@@ -807,7 +871,6 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
                             label="Faces",
                             show_label=False,
                             elem_id="gallery",
-                        ).style(
                             columns=[6], rows=[6], object_fit="contain", height="auto"
                         )
 
@@ -830,10 +893,10 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
 
     def on_target_type_change(value):
         visibility = {
-            "Image": (True, False, False, False, True, False, False),
-            "Video": (False, True, False, True, True, True, True),
-            "Directory": (False, False, True, False, False, False, False),
-            "Stream": (False, False, True, False, False, False, False),
+            "Image": (True, False, False, False, True, False, False, False),
+            "Video": (False, True, False, True, True, True, True, True),
+            "Directory": (False, False, True, False, False, False, False, False),
+            "Stream": (False, False, True, False, False, False, False, False),
         }
         return list(gr.update(visible=i) for i in visibility[value])
 
@@ -848,6 +911,7 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
             fg_mask_group,
             add_fg_mask_btn,
             del_fg_mask_btn,
+            test_swap,
         ],
     )
 
@@ -873,9 +937,9 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
         outputs=[age, specific_face, source_image_input],
     )
 
-    def on_slider_range_change(video_path):
-        if not os.path.exists(video_path):
-            gr.Info("Bad video path")
+    def on_set_slider_range(video_path):
+        if video_path is None or not os.path.exists(video_path):
+            gr.Info("Check video path")
         else:
             try:
                 cap = cv2.VideoCapture(video_path)
@@ -892,41 +956,36 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
                 gr.Info("Error fetching video")
 
     set_slider_range_event = set_slider_range_btn.click(
-        on_slider_range_change,
+        on_set_slider_range,
         inputs=[video_input],
         outputs=[frame_slider],
     )
 
-    def analyse_settings_changed(detect_condition, detection_size, detection_threshold):
-        pass
-
-    apply_detection_settings.click(
-        analyse_settings_changed,
-        inputs=[detect_condition_dropdown, detection_size, detection_threshold],
-    )
-
     def update_preview(video_path, frame_index, use_foreground_mask, resolution):
-        global CURRENT_FRAME
         if not os.path.exists(video_path):
-            yield None, None, None
+            yield gr.update(value=None), gr.update(value=None), gr.update(visible=False)
         else:
             frame = get_single_video_frame(video_path, frame_index)
-            if use_foreground_mask:
-                overlayed_image = frame
-                if frame_index in FOREGROUND_MASK_DICT.keys():
-                    mask = FOREGROUND_MASK_DICT.get(frame_index, None)
-                    if mask is not None:
-                        overlayed_image = image_mask_overlay(frame, mask)
-                    yield None, None, None  # clear previous mask
-                CURRENT_FRAME = resize_image_by_resolution(frame, resolution)
-                yield gr.update(value=CURRENT_FRAME[:, :, ::-1]), gr.update(
-                    value=overlayed_image[:, :, ::-1], visible=True
-                ), gr.update(visible=False)
-            else:
-                CURRENT_FRAME = resize_image_by_resolution(frame, resolution)
-                yield gr.update(value=CURRENT_FRAME[:, :, ::-1]), None, gr.update(
-                    visible=False
-                )
+            if frame is not None:
+                if use_foreground_mask:
+                    overlayed_image = frame
+                    if frame_index in FOREGROUND_MASK_DICT.keys():
+                        mask = FOREGROUND_MASK_DICT.get(frame_index, None)
+                        if mask is not None:
+                            overlayed_image = image_mask_overlay(frame, mask)
+                        yield gr.update(value=None), gr.update(value=None), gr.update(visible=False)  # clear previous mask
+                    frame = resize_image_by_resolution(frame, resolution)
+                    yield gr.update(value=frame[:, :, ::-1]), gr.update(
+                        value=overlayed_image[:, :, ::-1], visible=True
+                    ), gr.update(visible=False)
+                else:
+                    frame = resize_image_by_resolution(frame, resolution)
+                    yield gr.update(value=frame[:, :, ::-1]), gr.update(value=None), gr.update(
+                        visible=False
+                    )
+
+                global CURRENT_FRAME
+                CURRENT_FRAME = frame
 
     frame_slider_event = frame_slider.change(
         fn=update_preview,
@@ -985,7 +1044,10 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
     )
     exec(f"src_specific_inputs = ({gen_variable_txt})")
 
+    test_mode = gr.Checkbox(value=False, visible=False)
+
     swap_inputs = [
+        test_mode,
         target_type,
         target_image_input,
         video_input,
@@ -1005,6 +1067,7 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
         face_enhancer_name,
         face_upscaler_opacity,
         use_face_parsing_mask,
+        parse_from_target,
         mask_regions,
         mask_blur_amount,
         mask_erode_amount,
@@ -1019,6 +1082,10 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
         number_of_threads,
         use_frame_selection,
         frame_selection_ranges,
+        video_quality,
+        face_detection_condition,
+        face_detection_size,
+        face_detection_threshold,
         *src_specific_inputs,
     ]
 
@@ -1032,7 +1099,7 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
     swap_event = swap_button.click(fn=process, inputs=swap_inputs, outputs=swap_outputs)
 
     test_swap_settings = swap_inputs
-    test_swap_settings[0] = gr.Text(value="Test", interactive=False, visible=False)
+    test_swap_settings[0] = gr.Checkbox(value=True, visible=False)
 
     test_swap_event = test_swap.click(
         fn=update_preview,

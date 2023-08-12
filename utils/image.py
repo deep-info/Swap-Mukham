@@ -235,3 +235,18 @@ def fast_numpy_encode(img_array):
     buffer = cv2.imencode('.jpg', img_array)[1]
     base64_data = base64.b64encode(buffer.tobytes())
     return "data:image/jpg;base64," + base64_data.decode("utf-8")
+
+crf_quality_by_resolution = {
+    240: {"poor": 45, "low": 35, "medium": 28, "high": 23, "best": 20},
+    360: {"poor": 35, "low": 28, "medium": 23, "high": 20, "best": 18},
+    480: {"poor": 28, "low": 23, "medium": 20, "high": 18, "best": 16},
+    720: {"poor": 23, "low": 20, "medium": 18, "high": 16, "best": 14},
+    1080: {"poor": 20, "low": 18, "medium": 16, "high": 14, "best": 12},
+    1440: {"poor": 18, "low": 16, "medium": 14, "high": 12, "best": 10},
+    2160: {"poor": 16, "low": 14, "medium": 12, "high": 10, "best": 8}
+}
+
+def get_crf_for_resolution(resolution, quality):
+    available_resolutions = list(crf_quality_by_resolution.keys())
+    closest_resolution = min(available_resolutions, key=lambda x: abs(x - resolution))
+    return crf_quality_by_resolution[closest_resolution][quality]

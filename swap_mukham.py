@@ -1,7 +1,7 @@
 import cv2
-import torch
 import numpy as np
 
+import default_paths as dp
 from utils.device import get_device_and_provider
 from utils.face_alignment import get_cropped_head
 from utils.image import paste_to_whole, mix_two_image
@@ -11,13 +11,18 @@ from face_parsing import FaceParser
 from face_upscaler import get_available_upscalers_names, cv2_upscalers, load_face_upscaler
 from face_analyser import AnalyseFace, single_face_detect_conditions, face_detect_conditions, get_single_face, is_similar_face
 
+from nsfw_checker import NSFWChecker
+
 model_paths = {
     "inswapper":"assets/pretrained_models/inswapper_128.onnx",
     "faceparser":"assets/pretrained_models/faceparser.onnx"
 }
 
+get_device_name = lambda x: x.lower().replace("executionprovider", "")
+
 class SwapMukham:
     def __init__(self, device='cpu'):
+        self.load_nsfw_detector(device=device)
         self.load_face_swapper(device=device)
         self.load_face_analyser(device=device)
         # self.load_face_parser(device=device)
@@ -41,29 +46,45 @@ class SwapMukham:
         self.use_face_parsing = args.get('use_face_parsing', False)
         self.face_parse_regions = args.get('face_parse_regions', [1,2,3,4,5,10,11,12,13])
         self.face_upscaler_opacity = args.get('face_upscaler_opacity', 1.)
+        self.parse_from_target = args.get('parse_from_target', False)
+
+        self.analyser.detection_threshold = args.get('face_detection_threshold', 0.5)
+        self.analyser.detection_size = args.get('face_detection_size', (640, 640))
+        self.analyser.detect_condition = args.get('face_detection_condition', 'best detection')
+
+    def load_nsfw_detector(self, device='cpu'):
+        device, provider, options = get_device_and_provider(device=device)
+        self.nsfw_detector = NSFWChecker(model_path=dp.OPEN_NSFW_PATH, provider=provider, session_options=options)
+        _device = get_device_name(self.nsfw_detector.session.get_providers()[0])
+        print(f"[{_device}] NSFW detector model loaded.")
 
     def load_face_swapper(self, device='cpu'):
-        device, provider = get_device_and_provider(device=device)
-        self.swapper = Inswapper(model_file=model_paths['inswapper'], provider=provider)
-        print(f"[{device}] Face swapper model loaded.")
+        device, provider, options = get_device_and_provider(device=device)
+        self.swapper = Inswapper(model_file=dp.INSWAPPER_PATH, provider=provider, session_options=options)
+        _device = get_device_name(self.swapper.session.get_providers()[0])
+        print(f"[{_device}] Face swapper model loaded.")
 
     def load_face_analyser(self, device='cpu'):
-        device, provider = get_device_and_provider(device=device)
-        self.analyser = AnalyseFace(name='buffalo_l', provider=provider)
-        self.analyser.prepare()
-        print(f"[{device}] Face detection & recognition model loaded.")
+        device, provider, options = get_device_and_provider(device=device)
+        self.analyser = AnalyseFace(provider=provider, session_options=options)
+        _device_d = get_device_name(self.analyser.detector.session.get_providers()[0])
+        print(f"[{_device_d}] Face detection model loaded.")
+        _device_r = get_device_name(self.analyser.recognizer.session.get_providers()[0])
+        print(f"[{_device_r}] Face recognition model loaded.")
 
     def load_face_parser(self, device='cpu'):
-        device, provider = get_device_and_provider(device=device)
-        self.face_parser = FaceParser(model_path=model_paths['faceparser'], provider=provider)
-        print(f"[{device}] Face parsing model loaded.")
+        device, provider, options = get_device_and_provider(device=device)
+        self.face_parser = FaceParser(model_path=dp.FACE_PARSER_PATH, provider=provider, session_options=options)
+        _device = get_device_name(self.face_parser.session.get_providers()[0])
+        print(f"[{_device}] Face parsing model loaded.")
 
     def load_face_upscaler(self, name, device='cpu'):
-        device, provider = get_device_and_provider(device=device)
+        device, provider, options = get_device_and_provider(device=device)
         if name in get_available_upscalers_names():
-            self.face_upscaler = load_face_upscaler(name=name, provider=provider)
+            self.face_upscaler = load_face_upscaler(name=name, provider=provider, session_options=options)
             self.face_upscaler_name = name
-            print(f"[{device}] Face upscaler model loaded.")
+            _device = get_device_name(self.face_upscaler[0].session.get_providers()[0])
+            print(f"[{_device}] Face upscaler model ({name}) loaded.")
         else:
             self.face_upscaler_name = ""
             self.face_upscaler = None
@@ -124,7 +145,7 @@ class SwapMukham:
             _frame = self.swap_face(_frame, trg_face, src_face)
 
         if custom_mask is not None:
-            _mask = custom_mask
+            _mask = cv2.resize(custom_mask, _frame.shape[:2][::-1])
             _frame = _mask * frame.astype('float32') + (1 - _mask) * _frame.astype('float32')
             _frame = _frame.clip(0,255).astype('uint8')
 
@@ -134,9 +155,12 @@ class SwapMukham:
         return _frame
 
     def swap_face(self, frame, trg_face, src_face):
-        generated_face, matrix = self.swapper.forward(frame, trg_face, src_face, n_pass=self.num_of_pass)
+        target_face, generated_face, matrix = self.swapper.forward(frame, trg_face, src_face, n_pass=self.num_of_pass)
         upscaled_face, matrix = self.upscale_face(generated_face, matrix)
-        mask = self.face_parsed_mask(upscaled_face)
+        if self.parse_from_target:
+            mask = self.face_parsed_mask(target_face)
+        else:
+            mask = self.face_parsed_mask(upscaled_face)
         result = paste_to_whole(
             upscaled_face,
             frame,
@@ -163,12 +187,3 @@ class SwapMukham:
         else:
             mask = None
         return mask
-
-if __name__ == "__main__":
-    SM = SwapMukham(device='cuda')
-    args = {'swap_condition': "specific face"}
-    SM.set_values(args)
-    SM.load_face_upscaler()
-    source_faces = [("src3.png", "vlcsnap-2023-07-01-22h39m24s796.png")]
-    SM.analyse_source_faces(source_faces)
-    SM.process_frame("vlcsnap-2023-07-01-22h33m48s181.png")

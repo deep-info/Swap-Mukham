@@ -8,7 +8,6 @@ from datetime import datetime
 
 image_extensions = ["jpg", "jpeg", "png", "bmp", "tiff", "ico", "webp"]
 
-
 def get_images_from_directory(directory_path):
     file_paths =[]
     for file_path in glob.glob(os.path.join(directory_path, "*")):
@@ -65,10 +64,12 @@ def get_single_video_frame(video_path, frame_index):
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     frame_index = min(int(frame_index), total_frames-1)
     cap.set(cv2.CAP_PROP_POS_FRAMES, int(frame_index))
-    ret, frame = cap.read()
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    valid_frame, frame = cap.read()
     cap.release()
-    return frame
+    if valid_frame:
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        return frame
+    return None
 
 
 def get_video_fps(video_path):
@@ -101,42 +102,21 @@ def ffmpeg_extract_frames(video_path, destination, remove_existing=True, fps=30,
     return False, None
 
 
-def ffmpeg_merge_frames(sequence_directory, pattern, destination, fps=30, ffmpeg_path=None):
+def ffmpeg_merge_frames(sequence_directory, pattern, destination, fps=30, crf=18, ffmpeg_path=None):
     ffmpeg_path = 'ffmpeg' if ffmpeg_path is None else ffmpeg_path
     cmd = [
         ffmpeg_path,
         '-loglevel', 'info',
         '-hwaccel', 'auto',
         '-r', str(fps),
+        # '-pattern_type', 'glob',
         '-i', os.path.join(sequence_directory, pattern),
         '-c:v', 'libx264',
-        '-crf', '20',
+        '-crf', str(crf),
         '-pix_fmt', 'yuv420p',
         '-vf', 'colorspace=bt709:iall=bt601-6-625:fast=1',
         '-y', destination
     ]
-    process = subprocess.Popen(cmd)
-    process.communicate()
-    if process.returncode == 0:
-        return True, destination
-    else:
-        print(f"Error: Failed to merge image sequence.")
-    return False, None
-
-
-def ffmpeg_merge_frames2(sequence_directory, pattern, destination, fps=30, ffmpeg_path=None):
-    ffmpeg_path = 'ffmpeg' if ffmpeg_path is None else ffmpeg_path
-    cmd = [
-        ffmpeg_path,
-        '-framerate', str(fps),
-        '-pattern_type', 'glob',
-        '-i', os.path.join(sequence_directory, pattern),
-        '-c:v', 'libx264',
-        '-crf', '20',
-        '-pix_fmt', 'yuv420p',
-        '-y', destination
-    ]
-
     process = subprocess.Popen(cmd)
     process.communicate()
     if process.returncode == 0:
