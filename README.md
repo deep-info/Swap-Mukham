@@ -1,5 +1,25 @@
 # Swap-Mukham WIP
 
+## Changes
+- added parellel execution utilizing concurrent.futures
+- added test preview button
+- added video frame slider
+- added collect face from preview
+- added frame selection to replace trim feature
+- made every model in onnx format
+- editable onnx execution providers at ``utils/device``
+- removed moviepy, insightface dependency
+- removed pytorch dependency for cpu users
+- command line arg ``--prefer_text_widget`` to replace target video widget with text
+- more face-upscaler support (restoreformer, codeformer, gfpgan, gpen)
+- added face-upscaler opacity slider
+- nsfw now only checks random 100 frames
+- added custom foreground painting
+- ui changes (gradio 3.40)
+- added swap-iteration (may increase face likeliness)
+- added date-time option for output name
+
+  
 ## Install WIP branch
 ### CPU Install
 ````
