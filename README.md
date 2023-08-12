@@ -6,7 +6,7 @@
 - added video frame slider
 - added collect face from preview
 - added frame selection to replace trim feature
-- made every model in onnx format
+- converted every model to onnx format
 - editable onnx execution providers at ``utils/device``
 - removed moviepy, insightface dependency
 - removed pytorch dependency for cpu users
