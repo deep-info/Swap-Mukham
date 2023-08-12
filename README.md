@@ -13,7 +13,7 @@
 - command line arg ``--prefer_text_widget`` to replace target video widget with text
 - more face-upscaler support (restoreformer, codeformer, gfpgan, gpen)
 - added face-upscaler opacity slider
-- nsfw now only checks random 100 frames
+- nsfw-detector now only checks random 100 frames
 - added custom foreground painting
 - ui changes (gradio 3.40)
 - added swap-iteration (may increase face likeliness)
