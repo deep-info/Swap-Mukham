@@ -255,7 +255,7 @@ def process(
     if target_type == "Image" and not test_mode:
         target = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
 
-        is_nsfw = SWAP_MUKHAM.nsfw_detector.check_video(target)
+        is_nsfw = SWAP_MUKHAM.nsfw_detector.check_image(target)
         nsfw_assertion(is_nsfw)
 
         output = SWAP_MUKHAM.process_frame(
