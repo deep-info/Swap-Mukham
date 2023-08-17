@@ -105,7 +105,7 @@ class AnalyseFace:
         self.detection_size = (640, 640)
         self.detection_threshold = 0.5
 
-    def analyser(self, img):
+    def analyser(self, img, skip_embedding=False):
         bboxes, kpss = self.detector.detect(img, input_size=self.detection_size, det_thresh=self.detection_threshold)
         faces = []
         for i in range(bboxes.shape[0]):
@@ -114,16 +114,19 @@ class AnalyseFace:
             kps = None
             if kpss is not None:
                 kps = kpss[i]
-            feat = self.recognizer.get(img, kpss[i])
+            if skip_embedding:
+                feat = None
+            else:
+                feat = self.recognizer.get(img, kpss[i])
             face = Face(bbox=bbox, kps=kps, det_score=det_score, embedding=feat, gender=None, age=None)
             faces.append(face)
         return faces
 
-    def get_faces(self, image, scale=1.):
+    def get_faces(self, image, scale=1., skip_embedding=False):
         if isinstance(image, str):
             image = cv2.imread(image)
 
-        faces = self.analyser(image)
+        faces = self.analyser(image, skip_embedding=skip_embedding)
 
         if scale != 1: # landmark-scale
             for i, face in enumerate(faces):
@@ -134,6 +137,6 @@ class AnalyseFace:
 
         return faces
 
-    def get_face(self, image, scale=1.):
-        faces = self.get_faces(image, scale=scale)
+    def get_face(self, image, scale=1., skip_embedding=False):
+        faces = self.get_faces(image, scale=scale, skip_embedding=skip_embedding)
         return get_single_face(faces, method=self.detect_condition)

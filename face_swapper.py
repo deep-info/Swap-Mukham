@@ -23,16 +23,18 @@ class Inswapper():
     def forward(self, frame, target, source, n_pass=1):
         trg, matrix = norm_crop2(frame, target['kps'], 128)
 
-        latent = (source['embedding'] / l2norm(source['embedding'])).reshape((1, -1))
+        latent = source['embedding'].reshape((1, -1))
         latent = np.dot(latent, self.emap)
         latent /= np.linalg.norm(latent)
 
-        blob = cv2.dnn.blobFromImage(trg, 1.0 / 255, (128, 128), (0., 0., 0.), swapRB=True)
+        blob = trg.astype('float32') / 255
+        blob = blob[:, :, ::-1]
+        blob = np.expand_dims(blob, axis=0).transpose(0, 3, 1, 2)
 
         for _ in range(max(int(n_pass),1)):
             blob = self.session.run(['output'], {'target': blob, 'source': latent})[0]
 
-        out = blob.transpose((0, 2, 3, 1))[0]
+        out = blob[0].transpose((1, 2, 0))
         out = (out * 255).clip(0,255)
         out = out.astype('uint8')[:, :, ::-1]
 

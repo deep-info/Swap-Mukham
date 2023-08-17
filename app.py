@@ -1,17 +1,11 @@
 print(
 """
-
-  /$$$$$$                                       /$$      /$$         /$$      /$$
- /$$__  $$                                     | $$$    /$$$        | $$     | $$
-| $$  \__//$$  /$$  /$$ /$$$$$$  /$$$$$$       | $$$$  /$$$$/$$   /$| $$   /$| $$$$$$$  /$$$$$$ /$$$$$$/$$$$
-|  $$$$$$| $$ | $$ | $$|____  $$/$$__  $$      | $$ $$/$$ $| $$  | $| $$  /$$| $$__  $$|____  $| $$_  $$_  $$
- \____  $| $$ | $$ | $$ /$$$$$$| $$  \ $$      | $$  $$$| $| $$  | $| $$$$$$/| $$  \ $$ /$$$$$$| $$ \ $$ \ $$
- /$$  \ $| $$ | $$ | $$/$$__  $| $$  | $$      | $$\  $ | $| $$  | $| $$_  $$| $$  | $$/$$__  $| $$ | $$ | $$
-|  $$$$$$|  $$$$$/$$$$|  $$$$$$| $$$$$$$/      | $$ \/  | $|  $$$$$$| $$ \  $| $$  | $|  $$$$$$| $$ | $$ | $$
- \______/ \_____/\___/ \_______| $$____/       |__/     |__/\______/|__/  \__|__/  |__/\_______|__/ |__/ |__/
-                               | $$
-                               | $$
-                               |__/
+░██████╗░██╗░░░░░░░██╗░█████╗░██████╗░  ███╗░░░███╗██╗░░░██╗██╗░░██╗██╗░░██╗░█████╗░███╗░░░███╗
+██╔════╝░██║░░██╗░░██║██╔══██╗██╔══██╗  ████╗░████║██║░░░██║██║░██╔╝██║░░██║██╔══██╗████╗░████║
+╚█████╗░░╚██╗████╗██╔╝███████║██████╔╝  ██╔████╔██║██║░░░██║█████═╝░███████║███████║██╔████╔██║
+░╚═══██╗░░████╔═████║░██╔══██║██╔═══╝░  ██║╚██╔╝██║██║░░░██║██╔═██╗░██╔══██║██╔══██║██║╚██╔╝██║
+██████╔╝░░╚██╔╝░╚██╔╝░██║░░██║██║░░░░░  ██║░╚═╝░██║╚██████╔╝██║░╚██╗██║░░██║██║░░██║██║░╚═╝░██║
+╚═════╝░░░░╚═╝░░░╚═╝░░╚═╝░░╚═╝╚═╝░░░░░  ╚═╝░░░░░╚═╝░╚═════╝░╚═╝░░╚═╝╚═╝░░╚═╝╚═╝░░╚═╝╚═╝░░░░░╚═╝
 """
 )
 import os
@@ -416,7 +410,14 @@ def process(
 ## ------------------------------ GRADIO GUI ------------------------------
 
 css = """
-footer{display:none !important}
+
+div.gradio-container{
+    max-width: unset !important;
+}
+
+footer{
+    display:none !important
+}
 
 #slider_row {
   display: flex;
@@ -435,14 +436,17 @@ footer{display:none !important}
   display: flex;
   align-items: center;
 }
+
 """
 
-with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
+WIDGET_PREVIEW_HEIGHT = 450
+
+with gr.Blocks(css=css, theme=gr.themes.Default()) as interface:
     gr.Markdown("# 🗿 Swap Mukham")
     gr.Markdown("### Single image face swapper")
     with gr.Row():
         with gr.Row():
-            with gr.Column(scale=0.4):
+            with gr.Column(scale=0.35):
                 with gr.Tabs():
                     with gr.TabItem("📄 Input"):
                         swap_condition = gr.Dropdown(
@@ -460,7 +464,7 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
                         ## ------------------------------ SOURCE IMAGE ------------------------------
 
                         source_image_input = gr.Image(
-                            label="Source face", type="filepath", interactive=True
+                            label="Source face", type="filepath", interactive=True, height=200,
                         )
 
                         ## ------------------------------ SOURCE SPECIFIC ------------------------------
@@ -471,8 +475,8 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
                                 code = "\n"
                                 code += f"with gr.Tab(label='{idx}'):"
                                 code += "\n\twith gr.Row():"
-                                code += f"\n\t\tsrc{idx} = gr.Image(interactive=True, type='numpy', label='Source Face {idx}')"
-                                code += f"\n\t\ttrg{idx} = gr.Image(interactive=True, type='numpy', label='Specific Face {idx}')"
+                                code += f"\n\t\tsrc{idx} = gr.Image(interactive=True, type='numpy', label='Source Face {idx}', height=200)"
+                                code += f"\n\t\ttrg{idx} = gr.Image(interactive=True, type='numpy', label='Specific Face {idx}', height=200)"
                                 exec(code)
 
                             distance_slider = gr.Slider(
@@ -500,6 +504,7 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
                                     label="Target Image",
                                     interactive=True,
                                     type="filepath",
+                                    height=200
                                 )
 
                             ## ------------------------------ TARGET VIDEO ------------------------------
@@ -508,7 +513,7 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
                                 with gr.Column():
                                     video_widget = gr.Text if PREFER_TEXT_WIDGET else gr.Video
                                     video_input = video_widget(
-                                        label="Target Video", interactive=True
+                                        label="Target Video", interactive=True,
                                     )
 
                                     ## ------------------------------ FRAME SELECTION ------------------------------
@@ -782,10 +787,12 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
 
             ## ------------------------------ SWAP, CANCEL, FRAME SLIDER ------------------------------
 
-            with gr.Column(scale=0.6):
+            with gr.Column(scale=0.65):
                 with gr.Row():
                     swap_button = gr.Button("✨ Swap", variant="primary")
                     cancel_button = gr.Button("⛔ Cancel")
+                    collect_faces = gr.Button("👨 Collect Faces")
+                    test_swap = gr.Button("🧪 Test Swap")
 
                 with gr.Box() as frame_slider_box:
                     with gr.Row(elem_id="slider_row", equal_height=True):
@@ -806,16 +813,13 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
 
                 with gr.Tabs():
                     with gr.TabItem("Preview"):
-                        with gr.Row():
-                            collect_faces = gr.Button("👨 Collect Faces")
-                            test_swap = gr.Button("🧪 Test Swap")
 
                         preview_image = gr.Image(
-                            label="Preview", type="numpy", interactive=False
+                            label="Preview", type="numpy", interactive=False, height=WIDGET_PREVIEW_HEIGHT,
                         )
 
                         preview_video = gr.Video(
-                            label="Output", interactive=False, visible=False
+                            label="Output", interactive=False, visible=False, height=WIDGET_PREVIEW_HEIGHT,
                         )
                         preview_enabled_text = gr.Markdown(
                             "Disable paint foreground to preview !", visible=False
@@ -843,18 +847,10 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
 
                     with gr.TabItem("Paint Foreground"):
                         with gr.Box() as fg_mask_group:
-                            use_foreground_mask = gr.Checkbox(
-                                label="Use foreground mask", value=False, interactive=True
-                            )
-                            img_fg_mask = gr.Image(
-                                label="Paint Mask",
-                                tool="sketch",
-                                interactive=True,
-                                type="numpy",
-                            )
                             with gr.Row():
-                                add_fg_mask_btn = gr.Button("Add", interactive=True)
-                                del_fg_mask_btn = gr.Button("Del", interactive=True)
+                                with gr.Row():
+                                    use_foreground_mask = gr.Checkbox(
+                                    label="Use foreground mask", value=False, interactive=True)
                                 fg_mask_softness = gr.Slider(
                                     label="Mask Softness",
                                     minimum=0,
@@ -863,6 +859,15 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
                                     step=1,
                                     interactive=True,
                                 )
+                                add_fg_mask_btn = gr.Button("Add", interactive=True)
+                                del_fg_mask_btn = gr.Button("Del", interactive=True)
+                            img_fg_mask = gr.Image(
+                                label="Paint Mask",
+                                tool="sketch",
+                                interactive=True,
+                                type="numpy",
+                                height=WIDGET_PREVIEW_HEIGHT,
+                            )
 
                     ## ------------------------------ COLLECT FACE ------------------------------
 
@@ -871,7 +876,7 @@ with gr.Blocks(css=css, theme=gr.themes.Base()) as interface:
                             label="Faces",
                             show_label=False,
                             elem_id="gallery",
-                            columns=[6], rows=[6], object_fit="contain", height="auto"
+                            columns=[6], rows=[6], object_fit="contain", height=WIDGET_PREVIEW_HEIGHT,
                         )
 
     ## ------------------------------ FOOTER LINKS ------------------------------

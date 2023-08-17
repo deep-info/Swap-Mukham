@@ -26,7 +26,7 @@ class NSFWChecker:
             image = cv2.imread(image)
         img = prepare_image(image)
         score = self.session.run(None, {self.input_name:img})[0][0][1]
-        if score > threshold:
+        if score >= threshold:
             return True
         return False
 
@@ -38,13 +38,13 @@ class NSFWChecker:
         indexes = np.arange(total_frames, dtype=int)
         shuffled_indexes = np.random.permutation(indexes)[:max_frames]
 
-        for _, idx in tqdm(enumerate(shuffled_indexes), total=len(shuffled_indexes), desc="Checking"):
+        for idx in tqdm(shuffled_indexes, desc="Checking"):
             cap.set(cv2.CAP_PROP_POS_FRAMES, int(idx))
             valid_frame, frame = cap.read()
             if valid_frame:
                 img = prepare_image(frame)
                 score = self.session.run(None, {self.input_name:img})[0][0][1]
-                if score > threshold:
+                if score >= threshold:
                     cap.release()
                     return True
         cap.release()
@@ -56,10 +56,10 @@ class NSFWChecker:
         indexes = np.arange(total_frames, dtype=int)
         shuffled_indexes = np.random.permutation(indexes)[:max_frames]
 
-        for _, idx in tqdm(enumerate(shuffled_indexes), total=len(shuffled_indexes), desc="Checking"):
+        for idx in tqdm(shuffled_indexes, desc="Checking"):
             frame = cv2.imread(image_paths[idx])
             img = prepare_image(frame)
             score = self.session.run(None, {self.input_name:img})[0][0][1]
-            if score > threshold:
+            if score >= threshold:
                 return True
         return False

@@ -13,11 +13,6 @@ from face_analyser import AnalyseFace, single_face_detect_conditions, face_detec
 
 from nsfw_checker import NSFWChecker
 
-model_paths = {
-    "inswapper":"assets/pretrained_models/inswapper_128.onnx",
-    "faceparser":"assets/pretrained_models/faceparser.onnx"
-}
-
 get_device_name = lambda x: x.lower().replace("executionprovider", "")
 
 class SwapMukham:
@@ -116,9 +111,11 @@ class SwapMukham:
             alpha = frame[:, :, 3]
             frame = frame[:, :, :3]
 
-        analysed_target_faces = self.analyser.get_faces(frame, scale=self.face_scale)
         _frame = frame.copy()
         condition = self.swap_condition
+
+        skip_embedding = condition != "specific face"
+        analysed_target_faces = self.analyser.get_faces(frame, scale=self.face_scale, skip_embedding=skip_embedding)
 
         for analysed_target in analysed_target_faces:
             if (condition == "all face" or
@@ -173,13 +170,14 @@ class SwapMukham:
         return result
 
     def upscale_face(self, face, matrix):
+        face_size = face.shape[0]
         _face = cv2.resize(face, (512,512))
         if self.face_upscaler is not None:
             model, runner = self.face_upscaler
             face = runner(face, model)
         upscaled_face = cv2.resize(face, (512,512))
         upscaled_face = mix_two_image(_face, upscaled_face, self.face_upscaler_opacity)
-        return upscaled_face, matrix / 0.25
+        return upscaled_face, matrix * (512/face_size)
 
     def face_parsed_mask(self, face):
         if self.face_parser is not None and self.use_face_parsing:
