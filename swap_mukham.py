@@ -42,6 +42,7 @@ class SwapMukham:
         self.face_parse_regions = args.get('face_parse_regions', [1,2,3,4,5,10,11,12,13])
         self.face_upscaler_opacity = args.get('face_upscaler_opacity', 1.)
         self.parse_from_target = args.get('parse_from_target', False)
+        self.averaging_method = args.get('averaging_method', 'mean')
 
         self.analyser.detection_threshold = args.get('face_detection_threshold', 0.5)
         self.analyser.detection_size = args.get('face_detection_size', (640, 640))
@@ -66,6 +67,8 @@ class SwapMukham:
         print(f"[{_device_d}] Face detection model loaded.")
         _device_r = get_device_name(self.analyser.recognizer.session.get_providers()[0])
         print(f"[{_device_r}] Face recognition model loaded.")
+        _device_g = get_device_name(self.analyser.gender_age.session.get_providers()[0])
+        print(f"[{_device_g}] Gender & Age detection model loaded.")
 
     def load_face_parser(self, device='cpu'):
         device, provider, options = get_device_and_provider(device=device)
@@ -85,14 +88,14 @@ class SwapMukham:
             self.face_upscaler = None
 
     def collect_heads(self, frame):
-        faces = self.analyser.get_faces(frame)
+        faces = self.analyser.get_faces(frame, skip_task=['embedding', 'gender_age'])
         return [get_cropped_head(frame, face.kps) for face in faces if face["det_score"] > 0.5]
 
     def analyse_source_faces(self, source_specific):
         analysed_source_specific = []
         for i, (source, specific) in enumerate(source_specific):
             if source is not None:
-                analysed_source = self.analyser.get_face(source)
+                analysed_source = self.analyser.get_averaged_face(source, method=self.averaging_method)
                 if specific is not None:
                     analysed_specific = self.analyser.get_face(specific)
                 else:
@@ -114,15 +117,20 @@ class SwapMukham:
         _frame = frame.copy()
         condition = self.swap_condition
 
-        skip_embedding = condition != "specific face"
-        analysed_target_faces = self.analyser.get_faces(frame, scale=self.face_scale, skip_embedding=skip_embedding)
+        skip_task = []
+        if condition != "specific face":
+            skip_task.append('embedding')
+        if condition not in ['age less than', 'age greater than', 'all male', 'all female']:
+            skip_task.append('gender_age')
+
+        analysed_target_faces = self.analyser.get_faces(frame, scale=self.face_scale, skip_task=skip_task)
 
         for analysed_target in analysed_target_faces:
             if (condition == "all face" or
-                (condition == "age less than" and analysed_target["age"] < args['age']) or
-                (condition == "age greater than" and analysed_target["age"] > args['age']) or
-                (condition == "all Male" and analysed_target["gender"] == 1) or
-                (condition == "all Female" and analysed_target["gender"] == 0)):
+                (condition == "age less than" and analysed_target["age"] <= self.age) or
+                (condition == "age greater than" and analysed_target["age"] > self.age) or
+                (condition == "all male" and analysed_target["gender"] == 1) or
+                (condition == "all female" and analysed_target["gender"] == 0)):
 
                 trg_face = analysed_target
                 src_face = self.analysed_source_specific[0][0]

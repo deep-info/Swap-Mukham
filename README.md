@@ -18,8 +18,10 @@
 - ui changes (gradio 3.40)
 - added swap-iteration (may increase face likeliness)
 - added date-time option for output name
+- allow multiple source images (embeddings average)
+- use different model for gender & age detection
 
-  
+
 ## Install WIP branch
 ### CPU Install
 ````
@@ -49,6 +51,7 @@ python app.py --prefer_text_widget
 - [faceparser.onnx](https://huggingface.co/bluefoxcreation/Face_parsing_onnx/resolve/main/faceparser.onnx)
 - [det_10g.onnx](https://huggingface.co/bluefoxcreation/insightface-retinaface-arcface-model/resolve/main/det_10g.onnx)
 - [w600k_r50.onnx](https://huggingface.co/bluefoxcreation/insightface-retinaface-arcface-model/resolve/main/w600k_r50.onnx)
+- [gender_age.onnx](https://huggingface.co/bluefoxcreation/gender_age/resolve/main/gender_age.onnx)
 
 #### Face upscalers ``optional``
 - [codeformer.onnx](https://github.com/harisreedhar/Face-Upscalers-ONNX/releases/download/Models/codeformer.onnx)

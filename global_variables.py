@@ -31,3 +31,6 @@ MAX_THREADS = 2
 
 VIDEO_QUALITY_LIST = ["poor", "low", "medium", "high", "best"]
 VIDEO_QUALITY = "high"
+
+AVERAGING_METHODS = ["mean", "median"]
+AVERAGING_METHOD = "mean"

@@ -133,6 +133,7 @@ def process(
     face_detection_condition,
     face_detection_size,
     face_detection_threshold,
+    averaging_method,
     progress=gr.Progress(track_tqdm=True),
     *specifics,
 ):
@@ -190,10 +191,11 @@ def process(
     half = len(specifics) // 2
     if swap_condition == "specific face":
         source_specifics = [
-            (src, spc) for src, spc in zip(specifics[:half], specifics[half:])
+            ([s.name for s in src] if src is not None else None, spc) for src, spc in zip(specifics[:half], specifics[half:])
         ]
     else:
-        source_specifics = [(source_path, None)]
+        source_paths = [i.name for i in source_path]
+        source_specifics = [(source_paths, None)]
 
     if crop_top > crop_bott:
         crop_top, crop_bott = crop_bott, crop_top
@@ -217,7 +219,8 @@ def process(
         "face_detection_size": [int(face_detection_size), int(face_detection_size)],
         "face_detection_threshold": face_detection_threshold,
         "face_detection_condition": face_detection_condition,
-        "parse_from_target": parse_from_target
+        "parse_from_target": parse_from_target,
+        "averaging_method": averaging_method,
     }
 
     SWAP_MUKHAM.set_values(input_args)
@@ -463,8 +466,8 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as interface:
 
                         ## ------------------------------ SOURCE IMAGE ------------------------------
 
-                        source_image_input = gr.Image(
-                            label="Source face", type="filepath", interactive=True, height=200,
+                        source_image_input = gr.Files(
+                            label="Source face", type="file", interactive=True,
                         )
 
                         ## ------------------------------ SOURCE SPECIFIC ------------------------------
@@ -475,18 +478,9 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as interface:
                                 code = "\n"
                                 code += f"with gr.Tab(label='{idx}'):"
                                 code += "\n\twith gr.Row():"
-                                code += f"\n\t\tsrc{idx} = gr.Image(interactive=True, type='numpy', label='Source Face {idx}', height=200)"
-                                code += f"\n\t\ttrg{idx} = gr.Image(interactive=True, type='numpy', label='Specific Face {idx}', height=200)"
+                                code += f"\n\t\tsrc{idx} = gr.Files(interactive=True, type='file', label='Source Face {idx}')"
+                                code += f"\n\t\ttrg{idx} = gr.Image(interactive=True, type='numpy', label='Specific Face {idx}')"
                                 exec(code)
-
-                            distance_slider = gr.Slider(
-                                minimum=0,
-                                maximum=2,
-                                value=0.6,
-                                interactive=True,
-                                label="Distance",
-                                info="Lower distance is more similar and higher distance is less similar to the target face.",
-                            )
 
                         ## ------------------------------ TARGET TYPE ------------------------------
 
@@ -540,24 +534,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as interface:
                     ## ------------------------------ TAB MODEL ------------------------------
 
                     with gr.TabItem("🎚️ Model"):
-                        with gr.Accordion("Swapper", open=True):
-                            with gr.Row():
-                                swap_iteration = gr.Slider(
-                                    label="Swap Iteration",
-                                    minimum=1,
-                                    maximum=4,
-                                    value=1,
-                                    step=1,
-                                    interactive=True,
-                                )
-                                face_scale = gr.Slider(
-                                    label="Face Scale",
-                                    minimum=0,
-                                    maximum=2,
-                                    value=1,
-                                    interactive=True,
-                                )
-                        with gr.Accordion("Detection", open=True):
+                        with gr.Accordion("Detection", open=False):
                             face_detection_condition = gr.Dropdown(
                                 gv.SINGLE_FACE_DETECT_CONDITIONS,
                                 label="Condition",
@@ -575,6 +552,37 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as interface:
                                 value=gv.DETECT_THRESHOLD,
                                 interactive=True,
                             )
+                            face_scale = gr.Slider(
+                                label="Landmark Scale",
+                                minimum=0,
+                                maximum=2,
+                                value=1,
+                                interactive=True,
+                            )
+                        with gr.Accordion("Embedding/Recognition", open=True):
+                            averaging_method = gr.Dropdown(
+                                    gv.AVERAGING_METHODS,
+                                    label="Averaging Method",
+                                    value=gv.AVERAGING_METHOD,
+                                    interactive=True,
+                                )
+                            distance_slider = gr.Slider(
+                                minimum=0,
+                                maximum=2,
+                                value=0.65,
+                                interactive=True,
+                                label="Specific-Target Distance",
+                            )
+                        with gr.Accordion("Swapper", open=True):
+                            with gr.Row():
+                                swap_iteration = gr.Slider(
+                                    label="Swap Iteration",
+                                    minimum=1,
+                                    maximum=4,
+                                    value=1,
+                                    step=1,
+                                    interactive=True,
+                                )
 
                     ## ------------------------------ TAB POST-PROCESS ------------------------------
 
@@ -881,7 +889,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as interface:
 
     ## ------------------------------ FOOTER LINKS ------------------------------
 
-    with gr.Row():
+    with gr.Row(variant='panel'):
         gr.HTML(
             """
             <div style="display: flex; flex-direction: row; justify-content: center;">
@@ -1091,6 +1099,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as interface:
         face_detection_condition,
         face_detection_size,
         face_detection_threshold,
+        averaging_method,
         *src_specific_inputs,
     ]
 

@@ -7,8 +7,10 @@ import concurrent.futures
 import default_paths as dp
 from dataclasses import dataclass
 from utils.arcface import ArcFace
+from utils.gender_age import GenderAge
 from utils.retinaface import RetinaFace
 
+cache = {}
 
 @dataclass
 class Face:
@@ -101,32 +103,34 @@ class AnalyseFace:
     def __init__(self, provider=["CPUExecutionProvider"], session_options=None):
         self.detector = RetinaFace(model_file=dp.RETINAFACE_PATH, provider=provider, session_options=session_options)
         self.recognizer = ArcFace(model_file=dp.ARCFACE_PATH, provider=provider, session_options=session_options)
+        self.gender_age = GenderAge(model_file=dp.GENDERAGE_PATH, provider=provider, session_options=session_options)
         self.detect_condition = "best detection"
         self.detection_size = (640, 640)
         self.detection_threshold = 0.5
 
-    def analyser(self, img, skip_embedding=False):
+    def analyser(self, img, skip_task=[]):
         bboxes, kpss = self.detector.detect(img, input_size=self.detection_size, det_thresh=self.detection_threshold)
         faces = []
         for i in range(bboxes.shape[0]):
+            feat, gender, age = None, None, None
             bbox = bboxes[i, 0:4]
             det_score = bboxes[i, 4]
             kps = None
             if kpss is not None:
                 kps = kpss[i]
-            if skip_embedding:
-                feat = None
-            else:
+            if 'embedding' not in skip_task:
                 feat = self.recognizer.get(img, kpss[i])
-            face = Face(bbox=bbox, kps=kps, det_score=det_score, embedding=feat, gender=None, age=None)
+            if 'gender_age' not in skip_task:
+                gender, age = self.gender_age.predict(img, kpss[i])
+            face = Face(bbox=bbox, kps=kps, det_score=det_score, embedding=feat, gender=gender, age=age)
             faces.append(face)
         return faces
 
-    def get_faces(self, image, scale=1., skip_embedding=False):
+    def get_faces(self, image, scale=1., skip_task=[]):
         if isinstance(image, str):
             image = cv2.imread(image)
 
-        faces = self.analyser(image, skip_embedding=skip_embedding)
+        faces = self.analyser(image, skip_task=skip_task)
 
         if scale != 1: # landmark-scale
             for i, face in enumerate(faces):
@@ -137,6 +141,28 @@ class AnalyseFace:
 
         return faces
 
-    def get_face(self, image, scale=1., skip_embedding=False):
-        faces = self.get_faces(image, scale=scale, skip_embedding=skip_embedding)
+    def get_face(self, image, scale=1., skip_task=[]):
+        faces = self.get_faces(image, scale=scale, skip_task=skip_task)
         return get_single_face(faces, method=self.detect_condition)
+
+    def get_averaged_face(self, images, method="mean"):
+        if not isinstance(images, list):
+            images = [images]
+
+        face = self.get_face(images[0], scale=1., skip_task=[])
+
+        if len(images) > 1:
+            embeddings = [face['embedding']]
+
+            for image in images[1:]:
+                face = self.get_face(image, scale=1., skip_task=[])
+                embeddings.append(face['embedding'])
+
+            if method == "mean":
+                avg_embedding = np.mean(embeddings, axis=0)
+            elif method == "median":
+                avg_embedding = np.median(embeddings, axis=0)
+
+            face['embedding'] = avg_embedding
+
+        return face
